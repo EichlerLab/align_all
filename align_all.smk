@@ -55,6 +55,14 @@ def find_ref(wildcards):
 def find_aln_params(wildcards):
     if wildcards.aln in ['CCS', 'PacBio_HiFi', 'CLR', 'REVIO']:
         return ALN_PARAMS+" "+f"--sample {wildcards.sample} --rg '@RG\\tID:{wildcards.read}'"
+    elif wildcards.aln in ['ONT', 'ONT_UL']:
+        if wildcards.aln == 'ONT':
+            library="STD"
+        else:
+            library="UL"
+        return ALN_PARAMS+" "+f"-R '@RG\\tID:{wildcards.read}\\tSM:{wildcards.sample}\\tPL:ONT\\tLB:{library}'"
+    elif wildcards.aln in ['Illumina']:
+        return ALN_PARAMS+" "+f"-R '@RG\\tID:{wildcards.read}\\tSM:{wildcards.sample}\\tPL:ILLUMINA'"
     else:
         return ALN_PARAMS
 
