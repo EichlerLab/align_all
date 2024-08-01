@@ -1,0 +1,10 @@
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - minimap2
+  - samtools
+  - bwa
+  - sambamba
+  - pbmm2
