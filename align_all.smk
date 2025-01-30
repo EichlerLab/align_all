@@ -79,7 +79,7 @@ rule all:
     input:
         expand(expand('{{ref}}/{aln}/{sample}.all.sorted.bam', zip, sample=manifest_df.index.get_level_values('SAMPLE'), aln=manifest_df.index.get_level_values('TYPE')), ref=REF_DICT)
 
-rule index_ref:
+checkpoint index_ref:
     input:
         ref = find_ref
     output:
@@ -131,7 +131,7 @@ rule get_batch_ids:
             )
         ),
     resources:
-        mem=4,
+        mem=lambda wildcards, attempt: min(4**attempt,64),
         hrs=5,
     threads: 1
     script:
