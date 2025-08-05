@@ -16,6 +16,9 @@ command_dict['REVIO'] = "pbmm2 align --preset HiFi -j"
 command_dict['ONT'] = 'minimap2 -ax map-ont -I 8G -t'
 command_dict['ONT_UL'] = 'minimap2 -ax map-ont -I 8G -t'
 command_dict['Illumina'] = 'bwa mem -Y -K 100000000 -t'
+command_dict['HiFi_minimap'] = 'minimap2 -ax map-hifi -I 8G -t'
+command_dict['ONT_methyl'] = 'minimap2 -ax map-ont -I 8G -y -t'
+command_dict['ONT_Q20'] = 'minimap2 -ax lr:hq -I 8G -t'
 
 manifest_df = pd.read_csv(MANIFEST, sep='\s+', header=0, dtype=str)
 manifest_df = manifest_df.set_index(['SAMPLE', 'TYPE'], drop=False)
@@ -55,11 +58,15 @@ def find_ref(wildcards):
 def find_aln_params(wildcards):
     if wildcards.aln in ['CCS', 'PacBio_HiFi', 'CLR', 'REVIO']:
         return ALN_PARAMS+" "+f"--sample {wildcards.sample} --rg '@RG\\tID:{wildcards.read}'"
-    elif wildcards.aln in ['ONT', 'ONT_UL']:
+    elif 'ONT' in wildcards.aln:
         if wildcards.aln == 'ONT':
             library="STD"
-        else:
+        elif wildcards.aln == 'ONT_UL':
             library="UL"
+        elif wildcards.aln == 'ONT_methyl':
+            library="ONT"
+        else:
+            library="Unknown"
         return ALN_PARAMS+" "+f"-R '@RG\\tID:{wildcards.read}\\tSM:{wildcards.sample}\\tPL:ONT\\tLB:{library}'"
     elif wildcards.aln in ['Illumina']:
         return ALN_PARAMS+" "+f"-R '@RG\\tID:{wildcards.read}\\tSM:{wildcards.sample}\\tPL:ILLUMINA'"
