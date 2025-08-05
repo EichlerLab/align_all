@@ -35,7 +35,7 @@ def find_read_batch(wildcards):
 
 def combine_reads(wildcards):
     read_df = pd.read_csv(manifest_df.at[(wildcards.sample, wildcards.aln),'FOFN'], header=None, sep='\t')
-    if wildcards.aln in ['ONT', 'ONT_UL', 'REVIO']:
+    if wildcards.aln in ['ONT', 'ONT_UL', 'ONT_Q20', 'REVIO']:
         return expand(gather.split('tmp/{{ref}}/{{aln}}/{{sample}}.{{read}}_{scatteritem}.sorted.bam'), sample=wildcards.sample, read=read_df.index, ref=wildcards.ref, aln=wildcards.aln)
     else:
         return expand('{ref}/{aln}/{sample}.{read}.sorted.bam', sample=wildcards.sample, read=read_df.index, ref=wildcards.ref, aln=wildcards.aln)
@@ -63,7 +63,7 @@ def find_aln_params(wildcards):
             library="STD"
         elif wildcards.aln == 'ONT_UL':
             library="UL"
-        elif wildcards.aln == 'ONT_methyl':
+        elif (wildcards.aln == 'ONT_methyl') or (wildcards.aln == 'ONT_Q20'):
             library="ONT"
         else:
             library="Unknown"
