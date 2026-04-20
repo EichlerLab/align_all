@@ -12,33 +12,54 @@ command_dict = {}
 command_dict['CLR'] = "pbmm2 align --preset SUBREAD -j"
 command_dict['CCS'] = "pbmm2 align --preset CCS -j"
 command_dict['PacBio_HiFi'] = "pbmm2 align --preset HiFi -j"
+command_dict['PacBio_HiFi_BAM'] = "pbmm2 align --preset HiFi -j"
 command_dict['REVIO'] = "pbmm2 align --preset HiFi -j"
 command_dict['ONT'] = 'minimap2 -ax map-ont -I 8G -t'
 command_dict['ONT_UL'] = 'minimap2 -ax map-ont -I 8G -t'
 command_dict['Illumina'] = 'bwa mem -Y -K 100000000 -t'
 command_dict['HiFi_minimap'] = 'minimap2 -ax map-hifi -I 8G -t'
 command_dict['ONT_methyl'] = 'minimap2 -ax map-ont -I 8G -y -t'
+command_dict['ONT_methyl_BAM'] = 'minimap2 -ax map-ont -I 8G -y -t'
 command_dict['ONT_Q20'] = 'minimap2 -ax lr:hq -I 8G -t'
 
 manifest_df = pd.read_csv(MANIFEST, sep='\s+', header=0, dtype=str)
 manifest_df = manifest_df.set_index(['SAMPLE', 'TYPE'], drop=False)
 manifest_df.sort_index(inplace=True)
 
-def find_read(wildcards):
+def find_unaligned_bam(wildcards):
     read_df = pd.read_csv(manifest_df.at[(wildcards.sample, wildcards.aln), 'FOFN'], header=None, sep='\t')
-    return read_df.at[int(wildcards.read), 0].split(" ")
+    bam_file = read_df.at[int(wildcards.read), 0]
+    if wildcards.aln.endswith("_BAM") and not bam_file.endswith(".bam"):
+        msg = (
+            f"Expected a BAM input for TYPE '{wildcards.aln}', "
+            f"but got '{bam_file}'. "
+            "For *_BAM types, the input file must end with '.bam'."
+        )
+        raise ValueError(msg)
+    return bam_file
+
+def find_read(wildcards):
+    if wildcards.aln == "ONT_methyl_BAM":
+        return f"tmp/converted_fastq/{wildcards.sample}/{wildcards.aln}/{wildcards.read}.fastq.gz"
+    else:
+        read_df = pd.read_csv(manifest_df.at[(wildcards.sample, wildcards.aln), 'FOFN'], header=None, sep='\t')
+        return read_df.at[int(wildcards.read), 0].split(" ")
 
 def find_read_batch(wildcards):
-    read_df = pd.read_csv(manifest_df.at[(wildcards.sample, wildcards.aln), 'FOFN'], header=None, sep='\t', names=['FILE'])
-    file = read_df.iloc[int(wildcards.read)]['FILE']
-    return f'{file}.fai'
+    if wildcards.aln == "ONT_methyl_BAM":
+        return f"tmp/converted_fastq/{wildcards.sample}/{wildcards.aln}/{wildcards.read}.fastq.gz.fai"
+    else:
+        read_df = pd.read_csv(manifest_df.at[(wildcards.sample, wildcards.aln), 'FOFN'], header=None, sep='\t', names=['FILE'])
+        file = read_df.iloc[int(wildcards.read)]['FILE']
+        return f'{file}.fai'
 
 def combine_reads(wildcards):
     read_df = pd.read_csv(manifest_df.at[(wildcards.sample, wildcards.aln),'FOFN'], header=None, sep='\t')
-    if wildcards.aln in ['ONT', 'ONT_UL', 'ONT_Q20', 'REVIO']:
-        return expand(gather.split('tmp/{{ref}}/{{aln}}/{{sample}}.{{read}}_{scatteritem}.sorted.bam'), sample=wildcards.sample, read=read_df.index, ref=wildcards.ref, aln=wildcards.aln)
-    else:
+    if wildcards.aln in ["PacBio_HiFi_BAM", "Illumina"]:
         return expand('{ref}/{aln}/{sample}.{read}.sorted.bam', sample=wildcards.sample, read=read_df.index, ref=wildcards.ref, aln=wildcards.aln)
+    else:
+        return expand(gather.split('tmp/{{ref}}/{{aln}}/{{sample}}.{{read}}_{scatteritem}.sorted.bam'), sample=wildcards.sample, read=read_df.index, ref=wildcards.ref, aln=wildcards.aln)
+        
 
 def find_map(wildcards):
     if wildcards.aln == 'Illumina':
@@ -56,14 +77,18 @@ def find_ref(wildcards):
     return REF_DICT[wildcards.ref]
 
 def find_aln_params(wildcards):
-    if wildcards.aln in ['CCS', 'PacBio_HiFi', 'CLR', 'REVIO']:
-        return ALN_PARAMS+" "+f"--sample {wildcards.sample} --rg '@RG\\tID:{wildcards.read}'"
+    if wildcards.aln in ['CCS', 'PacBio_HiFi', 'CLR', 'REVIO','PacBio_HiFi_BAM', 'HiFi_minimap']: # HiFi
+        read_name = find_read(wildcards)[0]
+        if read_name.endswith("bam"):
+            return ALN_PARAMS+" "+f"--sample {wildcards.sample}" # to aviod 'pbmm2 align ERROR: Cannot override read groups with BAM input. Remove option --rg.'
+        else:
+            return ALN_PARAMS+" "+f"--sample {wildcards.sample} --rg '@RG\\tID:{wildcards.read}'"
     elif 'ONT' in wildcards.aln:
         if wildcards.aln == 'ONT':
             library="STD"
         elif wildcards.aln == 'ONT_UL':
             library="UL"
-        elif (wildcards.aln == 'ONT_methyl') or (wildcards.aln == 'ONT_Q20'):
+        elif (wildcards.aln == 'ONT_methyl') or (wildcards.aln == 'ONT_Q20') or (wildcards.aln == 'ONT_methyl_BAM'):
             library="ONT"
         else:
             library="Unknown"
@@ -99,12 +124,26 @@ checkpoint index_ref:
     threads: 1
     singularity:
         "docker://eichlerlab/align-basics:0.2",
-    shell:
-        '''
+    shell: """
         ln -s $( readlink -f {input.ref} ) {output.ref}
         samtools faidx {output.ref}
         bwa index {output.ref}
-        '''
+    """
+
+rule bam_to_fastq_methyl:
+    input:
+        read = find_unaligned_bam
+    output:
+        fastq = "tmp/converted_fastq/{sample}/{aln}/{read}.fastq.gz",
+        fai = "tmp/converted_fastq/{sample}/{aln}/{read}.fastq.gz.fai",
+    resources:
+        mem = 8,
+        hrs = 96
+    threads: 16
+    shell: """
+        samtools fastq -@ 4 -T "*" {input.read} | bgzip -@ 12 > {output.fastq}
+        samtools fqidx {output.fastq}
+    """
 
 rule map_reads:
     input:
@@ -122,10 +161,9 @@ rule map_reads:
         aln_params = find_aln_params
     singularity:
         "docker://eichlerlab/align-basics:0.2",
-    shell:
-        '''
+    shell: """
         {params.command} {threads} {params.aln_params} {input.ref} {input.read} | samtools view -b - > {output.bam}
-        '''
+        """
 
 
 rule get_batch_ids:
@@ -163,12 +201,11 @@ rule map_split:
     threads: 4
     singularity:
         "docker://eichlerlab/align-basics:0.2",
-    shell:
-        """
+    shell: """
         samtools fqidx {input.fastq} -r {input.batch_file} > {resources.tmpdir}/{wildcards.scatteritem}.fastq
         {params.command} {threads} {params.aln_params} {input.ref} {resources.tmpdir}/{wildcards.scatteritem}.fastq | samtools view -b - | sambamba sort -t {threads} -o {output.bam} -m 30G /dev/stdin
         rm {resources.tmpdir}/{wildcards.scatteritem}.fastq
-        """
+    """
 
 
 rule sort_indiv:
@@ -184,10 +221,9 @@ rule sort_indiv:
     threads: 12
     singularity:
         "docker://eichlerlab/align-basics:0.2",
-    shell:
-        '''
+    shell: """
         sambamba sort -t {threads} -o {output.sort_bam} -m 125G {input.bam}
-        '''
+    """
 
 rule merge_maps:
     input:
@@ -202,14 +238,13 @@ rule merge_maps:
     threads: 8
     singularity:
         "docker://eichlerlab/align-basics:0.2",
-    shell:
-        '''
+    shell: """
         if [[ $( echo {input.reads} | wc -w ) == 1 ]]; then
             cp -rl {input.reads} {output.merged}; samtools index {output.merged}
         else
             samtools merge -@ {threads} -o {output.merged} {input.reads}; samtools index {output.merged}
         fi
-        '''
+    """
 
 
 rule mark_duplicates:
@@ -226,11 +261,10 @@ rule mark_duplicates:
     threads: 8
     singularity:
         "docker://eichlerlab/align-basics:0.2",
-    shell:
-        '''
+    shell: """
         sambamba markdup -t {threads} --tmpdir={resources.tmpdir} {input.bam} {output.bam}
         samtools index {output.bam}
-        '''
+    """
 
 rule cram_conv:
     input:
@@ -246,10 +280,9 @@ rule cram_conv:
     singularity:
         "docker://eichlerlab/align-basics:0.2",
     threads: 1
-    shell:
-        '''
+    shell: """
         samtools view -C -T {input.ref} {input.bam} > {output.cram}
         samtools index {output.cram} 
-        '''
+    """
         
 
