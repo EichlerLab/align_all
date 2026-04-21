@@ -191,7 +191,7 @@ rule get_batch_ids:
 rule map_split:
     input:
         fastq = find_read,
-        batch_file = temp("tmp/splitBatchID/{sample}/{aln}/{read}_{scatteritem}.txt"),
+        batch_file = "tmp/splitBatchID/{sample}/{aln}/{read}_{scatteritem}.txt",
         ref = find_map,
     output:
         bam=temp("tmp/{ref}/{aln}/{sample}.{read}_{scatteritem}.sorted.bam")
