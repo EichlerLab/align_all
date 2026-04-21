@@ -256,7 +256,7 @@ rule mark_duplicates:
         bam = rules.merge_maps.output.merged,
         index = rules.merge_maps.output.index
     output:
-        bam = tmp('{ref}/{aln}/{sample}.all.sorted.md.bam'),
+        bam = temp('{ref}/{aln}/{sample}.all.sorted.md.bam'),
         index = '{ref}/{aln}/{sample}.all.sorted.md.bam.bai'
     resources:
         mem = 4,
