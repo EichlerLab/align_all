@@ -106,11 +106,15 @@ wildcard_constraints:
     ref='|'.join(REF_DICT)
 
 
-localrules: all, index_ref
+localrules: all, index_ref, get_crams
 
 rule all:
     input:
         expand(expand('{{ref}}/{aln}/{sample}.all.sorted.bam', zip, sample=manifest_df.index.get_level_values('SAMPLE'), aln=manifest_df.index.get_level_values('TYPE')), ref=REF_DICT)
+
+rule get_crams:
+    input:
+        expand(expand('{{ref}}/{aln}/cram/{sample}.final.cram', zip, sample=manifest_df.index.get_level_values('SAMPLE'), aln=manifest_df.index.get_level_values('TYPE')), ref=REF_DICT)
 
 checkpoint index_ref:
     input:
@@ -252,7 +256,7 @@ rule mark_duplicates:
         bam = rules.merge_maps.output.merged,
         index = rules.merge_maps.output.index
     output:
-        bam = '{ref}/{aln}/{sample}.all.sorted.md.bam',
+        bam = tmp('{ref}/{aln}/{sample}.all.sorted.md.bam'),
         index = '{ref}/{aln}/{sample}.all.sorted.md.bam.bai'
     resources:
         mem = 4,
