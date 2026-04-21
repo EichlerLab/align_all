@@ -151,7 +151,7 @@ rule map_reads:
         ref = find_map,
         read = find_read
     output:
-        bam = '{ref}/{aln}/{sample}.{read}.bam'
+        bam = temp("tmp/{ref}/{aln}/{sample}.{read}.bam")
     resources:
         mem = 12,
         smem = 4,
@@ -186,13 +186,11 @@ rule get_batch_ids:
 
 rule map_split:
     input:
-        fastq=find_read,
-        batch_file="tmp/splitBatchID/{sample}/{aln}/{read}_{scatteritem}.txt",
-        ref=find_map,
+        fastq = find_read,
+        batch_file = temp("tmp/splitBatchID/{sample}/{aln}/{read}_{scatteritem}.txt"),
+        ref = find_map,
     output:
-        bam=temp(
-            'tmp/{ref}/{aln}/{sample}.{read}_{scatteritem}.sorted.bam'
-        )
+        bam=temp("tmp/{ref}/{aln}/{sample}.{read}_{scatteritem}.sorted.bam")
     resources:
         mem=lambda wildcards, attempt: min(4**attempt,128),
         hrs=96,
