@@ -1,4 +1,5 @@
 # align_all
+Originally based on Mitchell Vollger's pipeline, this workflow has been modified for our use.
 
 A general Snakemake-based read alignment pipeline for long-read and short-read sequencing data, including PacBio HiFi, ONT, ONT ultra-long, ONT methylation-aware reads, ONT BAM input, and Illumina paired-end reads.
 
