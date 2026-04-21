@@ -13,8 +13,7 @@ At a high level, the pipeline:
 - chooses an aligner preset based on data type
 - aligns reads per input file or split batch
 - sorts and merges alignments into sample-level BAM files
-- marks duplicates
-- optionally converts final BAMs to CRAM
+- optionally converts final BAMs to CRAM after marking duplicates
 
 ## Repository contents
 
@@ -25,9 +24,7 @@ align_all/
 ├── aln.tab
 ├── runsnake
 ├── runlocal
-├── runsnake_submit_in_48hrs
-├── smk_scripts/
-└── conda_envs/
+└── smk_scripts/
 ```
 
 ## Requirements
@@ -127,7 +124,7 @@ Example:
 /net/eichler/vol28/projects/long_read_archive/nobackups/nhp/Asia_NLE/raw_data/PacBio_HiFi/m54329U_200814_231018.Q20.fastq
 ```
 
-For `ONT_BAM`, the input file listed in the FOFN must end with `.bam`.
+For `ONT_BAM` and `PacBio_HiFi_BAM`, the input file listed in the FOFN must end with `.bam`. This mode is intended for **unaligned BAM** input and is used when sequence data and relevant read tags should be carried forward into the downstream mapping process.
 
 ### Illumina FOFN
 
@@ -247,7 +244,7 @@ The workflow symlinks the requested reference into a local `ref/` directory and 
 
 ### ONT BAM input handling
 
-For `ONT_BAM`, the workflow first converts an unaligned BAM to gzipped FASTQ and builds an index before alignment.
+For `ONT_BAM`, the workflow first converts an **unaligned BAM** to gzipped FASTQ using `samtools fastq -T "*"`, then builds an index before alignment. This preserves BAM tags by passing all available tags through FASTQ header output during conversion, so tag information can be retained during the handoff from BAM input to the mapping step.
 
 ### Split alignment
 
@@ -316,6 +313,7 @@ NBATCHES: 15
 SAMPLE  FOFN  TYPE
 HG002   fofn/HG002.hifi.fofn  PacBio_HiFi
 HG002   fofn/HG002.ont.fofn   ONT
+HG002   fofn/HG002.ont.ubam.fofn   ONT_BAM
 ```
 
 ### run default BAM target
@@ -335,5 +333,4 @@ HG002   fofn/HG002.ont.fofn   ONT
 - `PacBio_HiFi_BAM` and `Illumina` are handled as whole-file alignments rather than split-batch extraction.
 - `ONT_methyl`, `ONT_BAM`, and related ONT modes include explicit read-group handling in alignment parameters.
 - The workflow defines both `all` and `get_crams` as local rules.
-
 
