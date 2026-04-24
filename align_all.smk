@@ -7,6 +7,7 @@ MANIFEST = config['MANIFEST']
 REF_DICT = config['REF']
 ALN_PARAMS = config.get('ALN_PARAMS', '')
 NBATCHES = config.get('NBATCHES', 15)
+GENOME_SIZE_GB = float(config.get("GENOME_SIZE_GB", 3.1))
 SNAKEMAKE_DIR = os.path.dirname(workflow.snakefile)
 
 command_dict = {}
@@ -45,6 +46,25 @@ def find_read(wildcards):
     else:
         read_df = pd.read_csv(manifest_df.at[(wildcards.sample, wildcards.aln), 'FOFN'], header=None, sep='\t')
         return read_df.at[int(wildcards.read), 0].split(" ")
+
+def find_fai(wildcards):
+    fofn = manifest_df.at[(wildcards.sample, wildcards.aln), "FOFN"]
+
+    if wildcards.aln == "ONT_BAM":
+        read_df = pd.read_csv(fofn, header=None, sep="\t")
+        out = [
+            f"tmp/converted_fastq/{wildcards.sample}/{wildcards.aln}/{read_idx}.fastq.gz.fai"
+            for read_idx in range(len(read_df))
+        ]
+        return out
+
+    read_df = pd.read_csv(fofn, header=None, sep="\t")
+    reads = []
+    for value in read_df[0].dropna():
+        reads.extend(str(value).split())
+
+    out = [f"{read}.fai" for read in reads]
+    return out
 
 def find_read_batch(wildcards):
     if wildcards.aln == "ONT_BAM":
@@ -110,11 +130,16 @@ localrules: all, index_ref, get_crams
 
 rule all:
     input:
-        expand(expand('{{ref}}/{aln}/{sample}.all.sorted.bam', zip, sample=manifest_df.index.get_level_values('SAMPLE'), aln=manifest_df.index.get_level_values('TYPE')), ref=REF_DICT)
+        expand(expand('{{ref}}/{aln}/{sample}.all.sorted.bam', zip, sample=manifest_df.index.get_level_values('SAMPLE'), aln=manifest_df.index.get_level_values('TYPE')), ref=REF_DICT),
+        expand('stats/{sample}/{aln}.stats', zip, sample=manifest_df.index.get_level_values('SAMPLE'), aln=manifest_df.index.get_level_values('TYPE'))
 
 rule get_crams:
     input:
         expand(expand('{{ref}}/{aln}/cram/{sample}.final.cram', zip, sample=manifest_df.index.get_level_values('SAMPLE'), aln=manifest_df.index.get_level_values('TYPE')), ref=REF_DICT)
+
+rule get_stats:
+    input:
+        expand('stats/{sample}/{aln}.stats', zip, sample=manifest_df.index.get_level_values('SAMPLE'), aln=manifest_df.index.get_level_values('TYPE'))
 
 checkpoint index_ref:
     input:
@@ -150,6 +175,50 @@ rule bam_to_fastq_methyl:
         samtools fqidx {output.fastq}
     """
 
+rule get_read_stats:
+    input:
+        fai = find_fai
+    output:
+        stats = "stats/{sample}/{aln}.stats"
+    params:
+        genome_size_gb = GENOME_SIZE_GB
+    resources:
+        mem = 8,
+        hrs = 1,
+    threads: 1
+    run:
+        import numpy as np
+        def get_n50(vals):
+            vals = vals.sort_values(ascending=False)
+            vals_csum = np.cumsum(vals)
+            return vals.iloc[np.sum(vals_csum <= (vals_csum.iloc[-1] // 2))] / 1000
+
+        df = pd.concat([
+            pd.read_csv(fai, sep="\t", header=None, usecols=[0, 1])
+            for fai in input.fai
+        ])
+
+        len_list = pd.Series(df[1].copy())
+        len_list.sort_values(ascending=False, inplace=True)
+
+        len_list_100k = pd.Series(df.loc[df[1] >= 100000, 1].copy())
+
+        coverage = np.sum(len_list) / (params.genome_size_gb * 1_000_000_000)
+        coverage_100k = np.sum(len_list_100k) / (params.genome_size_gb * 1_000_000_000)
+
+        with open(output.stats, "w") as out_file:
+            out_file.write(
+                "Coverage (X): {:,.3f}\n"
+                "Coverage 100k+ (X): {:,.3f}\n"
+                "Reads:     {:,d}\n"
+                "N50 (kbp):   {:,.3f}\n".format(
+                    coverage,
+                    coverage_100k,
+                    len(len_list),
+                    get_n50(len_list),
+                )
+            )
+
 rule map_reads:
     input:
         ref = find_map,
@@ -169,7 +238,6 @@ rule map_reads:
     shell: """
         {params.command} {threads} {params.aln_params} {input.ref} {input.read} | samtools view -b - > {output.bam}
         """
-
 
 rule get_batch_ids:
     input:
